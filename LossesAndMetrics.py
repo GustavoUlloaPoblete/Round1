@@ -141,8 +141,8 @@ class Boundary_loss(nn.Module):
         
         gdice_loss_cpu = gdice_loss.detach().cpu().numpy()
         B_loss_cpu = B_loss.cpu().detach().numpy()
-        print(f'gdice_lc:{gdice_loss_cpu.shape} {np.around(gdice_loss_cpu[:],4)}')
-        print(f'BL_lc:{B_loss_cpu.shape} {np.around(B_loss_cpu[:],4)}, mean:{np.around(B_loss_cpu[:].mean(),4)} std:{np.around(B_loss_cpu[:].std(),4)}')
+        # print(f'gdice_lc:{gdice_loss_cpu.shape} {np.around(gdice_loss_cpu[:],4)}')
+        # print(f'BL_lc:{B_loss_cpu.shape} {np.around(B_loss_cpu[:],4)}, mean:{np.around(B_loss_cpu[:].mean(),4)} std:{np.around(B_loss_cpu[:].std(),4)}')
         
         loss = alpha*gdice_loss + (1-alpha)*B_loss
         # print(f"loss: {loss} {loss.shape}, torch.mean(loss):{torch.mean(loss)} {loss.dtype}")
@@ -472,10 +472,10 @@ class ABL(nn.Module):
         # =============================================================================
         # total_loss = alpha*dice_loss + (1-alpha)*abl_loss
         
-        gdice_loss_cpu = gdice_loss.detach().cpu().numpy()
-        abl_loss_cpu = abl_loss.cpu().detach().numpy()
-        print(f'gdice_lc:{gdice_loss_cpu.shape} {np.around(gdice_loss_cpu,4)}')
-        print(f'abl_loss:{abl_loss_cpu.shape} {np.around(abl_loss_cpu,4)}')
+        # gdice_loss_cpu = gdice_loss.detach().cpu().numpy()
+        # abl_loss_cpu = abl_loss.cpu().detach().numpy()
+        # print(f'gdice_lc:{gdice_loss_cpu.shape} {np.around(gdice_loss_cpu,4)}')
+        # print(f'abl_loss:{abl_loss_cpu.shape} {np.around(abl_loss_cpu,4)}')
         
         total_loss = alpha*gdice_loss + (1-alpha)*abl_loss
         # print(f"total_loss: {total_loss} {total_loss.shape}, torch.mean(total_loss):{torch.mean(total_loss)} {total_loss.dtype}")

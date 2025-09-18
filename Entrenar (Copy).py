@@ -272,30 +272,26 @@ def Training():
     print(f'G_DTM:{G_DTM}, G_SDF:{G_SDF}, GTB:{GTB}, CBL:{CBL}, MDF:{MDF}, G_PDF:{G_PDF}')
     
     # batch_size_val=batch_size//2
-    batch_size_val = 8
+    batch_size_val = 2
     train_dataset = ImageDataset(data_path,pacientes_train,tipo='train',G_DTM=G_DTM,G_SDF=G_SDF,GTB=GTB,CBL=CBL,MDF=MDF,G_PDF=G_PDF, return_slide=return_slide)
     print(f'\ntrain_dataset.images: {len(train_dataset.images)}')
     train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, drop_last=True)
-    
     val_dataset  = ImageDataset(data_path, pacientes_val, tipo='train', G_DTM=G_DTM, G_SDF=G_SDF, GTB=GTB, CBL=CBL,MDF=MDF,G_PDF=G_PDF, return_slide=return_slide)
-    val_dataloader  = DataLoader(val_dataset, batch_size=batch_size_val, shuffle=False, drop_last=True)
-    
-    # val_dataset  = ImageDataset(data_path, pacientes_val, tipo='train', G_DTM=G_DTM, G_SDF=G_SDF, GTB=GTB, CBL=CBL,MDF=MDF,G_PDF=G_PDF, return_slide=return_slide)
-    # test_dataset = ImageDataset(data_path, pacientes_test, tipo='train', G_DTM=G_DTM, G_SDF=G_SDF, GTB=GTB, CBL=CBL,MDF=MDF,G_PDF=G_PDF, return_slide=return_slide)
-    # if d['DS']=='MSSEG2016':
-    #     val_dataloader  = DataLoader(val_dataset, batch_size=13, shuffle=False, drop_last=True)
-    #     test_dataloader = DataLoader(test_dataset, batch_size=13, shuffle=False, drop_last=True)
-    # elif d['DS']=='ISBI2015':
-    #     val_dataloader = DataLoader(val_dataset, batch_size=15, shuffle=False, drop_last=True)#347%15=2
-    #     test_dataloader = DataLoader(test_dataset, batch_size=17, shuffle=False, drop_last=True)#175%17=5
-    # elif d['DS']=='WMH2017':
-    #     val_dataloader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, drop_last=True)
-    #     test_dataloader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False, drop_last=True)
+    test_dataset = ImageDataset(data_path, pacientes_test, tipo='train', G_DTM=G_DTM, G_SDF=G_SDF, GTB=GTB, CBL=CBL,MDF=MDF,G_PDF=G_PDF, return_slide=return_slide)
+    if d['DS']=='MSSEG2016':
+        val_dataloader  = DataLoader(val_dataset, batch_size=13, shuffle=False, drop_last=True)
+        test_dataloader = DataLoader(test_dataset, batch_size=13, shuffle=False, drop_last=True)
+    elif d['DS']=='ISBI2015':
+        val_dataloader = DataLoader(val_dataset, batch_size=15, shuffle=False, drop_last=True)#347%15=2
+        test_dataloader = DataLoader(test_dataset, batch_size=17, shuffle=False, drop_last=True)#175%17=5
+    elif d['DS']=='WMH2017':
+        val_dataloader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, drop_last=True)
+        test_dataloader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False, drop_last=True)
     
     print('\n'+d['DS']+':')
     print(f'train_dataset: {len(train_dataset)} // {batch_size} = {len(train_dataset)//batch_size}, {len(train_dataset)} % {batch_size} = {len(train_dataset)%batch_size}')
-    # print(f'val_dataset: {len(val_dataset)} // {batch_size} = {len(val_dataset)//batch_size}, {len(val_dataset)} % {batch_size} = {len(val_dataset)%batch_size}')
-    # print(f'test_dataset: {len(test_dataset)} // {batch_size} = {len(test_dataset)//batch_size}, {len(test_dataset)} % {batch_size} = {len(test_dataset)%batch_size}')
+    print(f'val_dataset: {len(val_dataset)} // {batch_size} = {len(val_dataset)//batch_size}, {len(val_dataset)} % {batch_size} = {len(val_dataset)%batch_size}')
+    print(f'test_dataset: {len(test_dataset)} // {batch_size} = {len(test_dataset)//batch_size}, {len(test_dataset)} % {batch_size} = {len(test_dataset)%batch_size}')
     # Para MDF_D y para evaluar métricas del volumen completo, funciona, así que mejor no tocar (fusionar)
     
     d_dataloader = {}# Retorna todas las slides del paciente ordenadas
@@ -303,11 +299,9 @@ def Training():
         if paciente not in d_dataloader:
             # d_dataloader[paciente] = DataLoader(ImageDataset(data_path, [paciente], tipo='eval'), batch_size=batch_size, shuffle=False)
             d_dataloader[paciente] = DataLoader(ImageDataset(data_path, [paciente], tipo='eval'), batch_size=batch_size_val, shuffle=False)
-    ### Esto es para hacerlo dinámico: no dió buenos resultados lo dinámico
     d_dataloader_trainvaltest = {}# Retorna todas las slides del paciente ordenadas
     for paciente in pacientes_train +pacientes_val+pacientes_test:# Crear un dataloader para cada paciente con todas las slides
         d_dataloader_trainvaltest[paciente] = DataLoader(ImageDataset(data_path, [paciente], tipo='eval',MDF=MDF, return_slide=True), batch_size=batch_size_dtrain, shuffle=False)
-    ###
     
     d_epocas = {'loss_train':[],'dice_train':[],'loss_val':[],'dice_val':[],'loss_test':[],'dice_test':[],
                 'HD_val':[],'HD95_val':[],'HD90_val':[],'ASSD_val':[],'ASSD95_val':[],'RVD_val':[],'F1_val':[],'TPR_val':[],'PPV_val':[],'AUC_ROC_val':[],'AUC_PR_val':[],'F2_val':[],
@@ -325,8 +319,8 @@ def Training():
     for epoca in range(1, epocas+1):
         tiempo_epoca = time()
         print(f'\népoca {epoca}',' /', nombre_carpeta_principal,'/',nombre_carpeta_ce,'/ k:',k)
-        if epoca==2: ###########
-            break    ##############
+        if epoca==2:###########
+            break##############
         alpha = max(round(1 - (epoca-1)/epocas, 4), 0.01)# Como en los papers Boundary loss y ABL
         print('---alpha:',alpha)
         print('training...')
@@ -561,8 +555,7 @@ def Training():
         model.eval()
         lista_loss_val = []
         lista_dice_val = []
-        # for tensores in test_dataloader:
-        for tensores in val_dataloader:
+        for tensores in test_dataloader:
             if d['loss'] == 'HD_loss':
                 X, Y, Y_DTM = tensores
                 Y_DTM = Y_DTM.to(device)

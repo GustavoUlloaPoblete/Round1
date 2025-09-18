@@ -86,12 +86,14 @@ for DS in ['MSSEG2016']:
 # for DS in ['ISBI2015']:
     for epocas in ['200']:
         folds = DS+'_5folds'
-        for loss in ['MD_loss']:
-        
-        # for loss in ['GDL']:
+        for loss in ['GDL']:
+        # for loss in ['MD_loss']:
         # for loss in ['Boundary_loss']:
         # for loss in ['HD_loss']:
         # for loss in ['ABL']:
+        # for loss in ['CBL']:#No cabe en la VRAM: Modificar el batch size del dataloader para conj val y test
+        # for loss in ['BSL_LC']:
+        
             
             sc='A5GL11';canal='FLAIR';r='5';ady='1';ce='GL';par_ce='0.3'
             prototipo='prototipo_mediana';gamma_MDF='1.0';percentil='0.9'
