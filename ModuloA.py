@@ -557,7 +557,7 @@ def MDF(G_original, AC, r, ady, ce, par_ce, prototipo, gamma, percentil,dist):
                         mdf3D[1,i,j]=np.sqrt( dMahalanobis(AC[:,k,i,j], dBordes[i_ind,j_ind][prototipo], dBordes[i_ind,j_ind]['precision']))
                     except RuntimeWarning:
                         print('RuntimeWarning, except sqrt 1!!!!!')
-                        print(f'mahalanobis:{dMahalanobis(AC[:,k,i,j], dBordes[i_ind,j_ind][prototipo], dBordes[i_ind,j_ind]['precision'])}')
+                        print(f'mahalanobis:{dMahalanobis(AC[:,k,i,j], dBordes[i_ind,j_ind][prototipo], dBordes[i_ind,j_ind]["precision"])}')
                         mdf3D[1,i,j]=abs(sdf_Gin[i,j])
                     except:
                         print('Otra except!')
@@ -582,7 +582,7 @@ def MDF(G_original, AC, r, ady, ce, par_ce, prototipo, gamma, percentil,dist):
                         mdf3D[0,i,j]=np.sqrt( dMahalanobis(AC[:,k,i,j], dBordes[i_ind,j_ind][prototipo], dBordes[i_ind,j_ind]['precision']))
                     except RuntimeWarning:
                         print('RuntimeWarning, except sqrt 0!!!!!')
-                        print(f'mahalanobis:{dMahalanobis(AC[:,k,i,j], dBordes[i_ind,j_ind][prototipo], dBordes[i_ind,j_ind]['precision'])}')
+                        print(f'mahalanobis:{dMahalanobis(AC[:,k,i,j], dBordes[i_ind,j_ind][prototipo], dBordes[i_ind,j_ind]["precision"])}')
                         mdf3D[0,i,j]=abs(sdf[i,j])
                     except:
                         print('Otra except!')

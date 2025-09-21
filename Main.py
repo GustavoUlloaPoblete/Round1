@@ -44,9 +44,11 @@ os.environ["CUDA_VISIBLE_DEVICES"]=gpu
 tasa_da = '0.0'
 umbral_vol_training = '1'
 batch_size='16'
+batch_size_val = '8'
 metric = 'Dice_metric'
 opt = 'Adam'
 red= 'Unet'
+red= 'Unet_MONAI'
 mixed_precision = 'T' #;mixed_precision = 'F'
 ES = 'T' #;ES = 'F'#Early-stopping
 
@@ -120,7 +122,7 @@ for DS in ['MSSEG2016']:
                             'ES:'+ES,'patience:'+patience,'start_es:'+start_es,'potencia_assd:'+potencia_assd,'beta_ASL:'+beta_ASL,
                             'w_SEL:'+w_SEL,'p_assd:'+p_assd,'umbral_vol_training:'+umbral_vol_training,
                             'alpha_BS:'+alpha_BS,'beta_BS_LC:'+beta_BS_LC,'wa_ABL:'+wa_ABL,'batch_loss:'+batch_loss,
-                            'gamma_CBL:'+gamma_CBL]+lista_MDF
+                            'gamma_CBL:'+gamma_CBL,'batch_size_val:'+batch_size_val]+lista_MDF
                         parametros_base = ' '.join(lista_parametros)
                         print(f'parametros_base: {parametros_base}')
                         if crear_carpetas and os.uname()[1] == 'mineria':
