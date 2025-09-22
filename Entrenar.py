@@ -22,8 +22,9 @@ import ModuloA
 # torch.manual_seed(18)
 
 # import monai
-from monai.networks.nets import UNet
+from monai.networks.nets import UNet, AttentionUnet, SwinUNETR
 from torch.amp import autocast, GradScaler
+# from torch.cuda.amp import autocast, GradScaler
 # from monai.visualize import plot_network
 
 
@@ -199,11 +200,33 @@ def Training():
             strides=(2, 2, 2, 2),#no hay maxpooling
             norm=("batch", {"affine": True}),
             num_res_units=0
-        ).to(device)
+        )
+    elif d['red'] == 'Attention-Unet_MONAI':
+        print('Attention-Unet_MONAI')
+        model = AttentionUnet(
+            spatial_dims=2,
+            in_channels=C,
+            out_channels=2,
+            channels=(64, 128, 256, 512, 1024),
+            strides=(2, 2, 2, 2),#no hay maxpooling
+        )
+    elif d['red'] == 'SwinUNETR_MONAI':
+        model = SwinUNETR(
+        in_channels=C,
+        out_channels=2,
+        spatial_dims=2,            # 2 si trabajas en 2D
+        patch_size=2,              # tamaño de patch interno del Swin
+        depths=(2, 2, 2, 2),       # capas por nivel (ajusta VRAM/complejidad)
+        num_heads=(3, 6, 12, 24),  # cabezas por nivel
+        window_size=7,             # ventana de atención
+        feature_size=48,           # base de canales (sube para +capacidad, +VRAM)
+        norm_name="instance",
+        use_checkpoint=True        # activa recompute para ahorrar VRAM ✔
+        )#.to(device)
     else:
         model = getattr(Modelos,d['red'])(C, 2).to(device)
-        
-    print(model)
+    model = model.to(device)
+    # print(model)
         
     G_DTM = False; G_SDF = False; GTB=False; CBL=False; MDF=False
     G_PDF = False; return_slide = False#borrar
@@ -226,7 +249,6 @@ def Training():
     print(f'pacientes_train:{pacientes_train}')
     print(f'G_DTM:{G_DTM}, G_SDF:{G_SDF}, GTB:{GTB}, CBL:{CBL}, MDF:{MDF}, G_PDF:{G_PDF}')
     
-    # batch_size_val = 8
     train_dataset = ImageDataset(data_path,pacientes_train,tipo='train',G_DTM=G_DTM,G_SDF=G_SDF,GTB=GTB,CBL=CBL,MDF=MDF,G_PDF=G_PDF, return_slide=return_slide)
     print(f'\ntrain_dataset.images: {len(train_dataset.images)}')
     train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, drop_last=True)
@@ -241,30 +263,28 @@ def Training():
     d_dataloader = {}# Retorna todas las slides del paciente ordenadas
     for paciente in pacientes_val+pacientes_test:# Crear un dataloader para cada paciente con todas las slides
         if paciente not in d_dataloader:
-            # d_dataloader[paciente] = DataLoader(ImageDataset(data_path, [paciente], tipo='eval'), batch_size=batch_size, shuffle=False)
             d_dataloader[paciente] = DataLoader(ImageDataset(data_path, [paciente], tipo='eval'), batch_size=batch_size_val, shuffle=False)
-    ### Esto es para hacerlo dinámico: no dió buenos resultados lo dinámico
-    d_dataloader_trainvaltest = {}# Retorna todas las slides del paciente ordenadas
-    for paciente in pacientes_train +pacientes_val+pacientes_test:# Crear un dataloader para cada paciente con todas las slides
-        d_dataloader_trainvaltest[paciente] = DataLoader(ImageDataset(data_path, [paciente], tipo='eval',MDF=MDF, return_slide=True), batch_size=batch_size_dtrain, shuffle=False)
-    ###
     
     d_epocas = {'loss_train':[],'dice_train':[],'loss_val':[],'dice_val':[],'loss_test':[],'dice_test':[],
                 'HD_val':[],'HD95_val':[],'HD90_val':[],'ASSD_val':[],'ASSD95_val':[],'RVD_val':[],'F1_val':[],'TPR_val':[],'PPV_val':[],'AUC_ROC_val':[],'AUC_PR_val':[],'F2_val':[],
                 'HD_test':[],'HD95_test':[],'HD90_test':[],'ASSD_test':[],'ASSD95_test':[],'RVD_test':[],'F1_test':[],'TPR_test':[],'PPV_test':[],'AUC_ROC_test':[],'AUC_PR_test':[],'F2_test':[]}
-    # use_amp = True # mixed precision
-    model = model.to(device)
-    print("Sumando parametros: ",sum(p.numel() for p in model.parameters()))
-    total = 0
-    for name, p in model.named_parameters():
-        n = p.numel()
-        print(f"{name:60s} {n}")
-        total += n
-    print("TOTAL:", total)
-    # tx = torch.randn(1,3,160,192)
-    # plot_network(model, tx, filename="unet_monai.png")
+    
+    # print("Sumando parametros: ",sum(p.numel() for p in model.parameters()))
+    # total = 0
+    # for name, p in model.named_parameters():
+    #     n = p.numel()
+    #     # print(f"{name:60s} {n}")
+    #     total += n
+    # print("TOTAL:", total)
 
     optimizer = torch.optim.Adam(model.parameters(), lr = 0.001)#, eps=1e-07)# eps como keras
+    if d['mixed_precision']=="T":
+        USE_AMP = True
+    else:
+        USE_AMP = False
+    if USE_AMP:
+        scaler = GradScaler()
+    
     # scaler = torch.cuda.amp.GradScaler(enabled=use_amp) # mixed precision
     # scaler = GradScaler("cuda")  # reemplaza torch.cuda.amp.GradScaler(...)
     t_ini = time()
@@ -277,7 +297,7 @@ def Training():
     for epoca in range(1, epocas+1):
         tiempo_epoca = time()
         print(f'\népoca {epoca}',' /', nombre_carpeta_principal,'/',nombre_carpeta_ce,'/ k:',k)
-        if epoca==2: ###########
+        if epoca==3: ###########
             break    ##############
         alpha = max(round(1 - (epoca-1)/epocas, 4), 0.01)# Como en los papers Boundary loss y ABL
         print('---alpha:',alpha)
@@ -311,41 +331,39 @@ def Training():
             X, Y = X.to(device), Y.to(device)
             # X = X.to(device, non_blocking=True)
             # Y = Y.to(device, non_blocking=True)
-            # optimizer.zero_grad(set_to_none=True)
             
-            # with torch.autocast(device_type=device, dtype=torch.float16, enabled=use_amp): # mixed precision
-            # print(f'with: X:{X.shape}, Y:{Y.shape}')
-            if 'MONAI' in d['red']:
-                logits = model(X)
-                pred = torch.softmax(logits, dim=1)
-            elif d['loss'] == 'CBL':
-                pred, bottle_neck, last_conv = model(X)
-            else:
-                pred = model(X)
+            optimizer.zero_grad(set_to_none=True)
+            with autocast(device_type=device, enabled=USE_AMP):
+                if 'MONAI' in d['red']:
+                    logits = model(X)
+                    pred = torch.softmax(logits, dim=1)
+                elif d['loss'] == 'CBL':
+                    pred, bottle_neck, last_conv = model(X)
+                else:
+                    pred = model(X)
+                    
+                if d['loss'] == 'HD_loss':
+                    pred_DTM = bbg.DTM_2D(pred[:,1].detach().cpu().numpy())# procesa cada una de las N=batch_size slides
+                    pred_DTM = torch.from_numpy(pred_DTM); pred_DTM = pred_DTM.to(device)
+                    loss = loss_function(pred, Y, Y_DTM, pred_DTM, alpha, batch_loss)# para HD_loss
+                elif d['loss'] == 'Boundary_loss':
+                    loss = loss_function(pred, Y, Y_SDF, alpha, batch_loss)# para Boundary_loss
+                elif d['loss'] == 'ABL':
+                    loss = loss_function(pred, GTB, Y, alpha, wa_ABL)# para ABL
+                elif d['loss'] == 'BSLoss':
+                    loss = loss_function(torch.unsqueeze(pred[:,1],1), torch.unsqueeze(Y[:,1],1), alpha_BS)# para BSLoss
+                elif d['loss'] == 'BSL_LC':
+                    loss = loss_function(torch.unsqueeze(pred[:,1],1), torch.unsqueeze(Y[:,1],1), alpha_BS, beta_BS_LC)# para BSL_LC
+                elif d['loss'] == 'FT_loss':
+                    loss = loss_function(pred, Y, alpha_TL, beta_TL, gamma, batch_loss)# para Focal tversky loss
+                elif d['loss'] == 'CBL':
+                    loss = loss_function(pred, Y, CBL, bottle_neck, last_conv, alpha, batch_loss, gamma_CBL)# para CBL
                 
-            if d['loss'] == 'HD_loss':
-                pred_DTM = bbg.DTM_2D(pred[:,1].detach().cpu().numpy())# procesa cada una de las N=batch_size slides
-                pred_DTM = torch.from_numpy(pred_DTM); pred_DTM = pred_DTM.to(device)
-                loss = loss_function(pred, Y, Y_DTM, pred_DTM, alpha, batch_loss)# para HD_loss
-            elif d['loss'] == 'Boundary_loss':
-                loss = loss_function(pred, Y, Y_SDF, alpha, batch_loss)# para Boundary_loss
-            elif d['loss'] == 'ABL':
-                loss = loss_function(pred, GTB, Y, alpha, wa_ABL)# para ABL
-            elif d['loss'] == 'BSLoss':
-                loss = loss_function(torch.unsqueeze(pred[:,1],1), torch.unsqueeze(Y[:,1],1), alpha_BS)# para BSLoss
-            elif d['loss'] == 'BSL_LC':
-                loss = loss_function(torch.unsqueeze(pred[:,1],1), torch.unsqueeze(Y[:,1],1), alpha_BS, beta_BS_LC)# para BSL_LC
-            elif d['loss'] == 'FT_loss':
-                loss = loss_function(pred, Y, alpha_TL, beta_TL, gamma, batch_loss)# para Focal tversky loss
-            elif d['loss'] == 'CBL':
-                loss = loss_function(pred, Y, CBL, bottle_neck, last_conv, alpha, batch_loss, gamma_CBL)# para CBL
-            
-            elif d['loss']=='MD_loss':
-                loss = loss_function(pred, Y, alpha, Y_MDF, parMD_weight, parMD_pot)
-            
-            else: # Dice, FTL, ASD, BCE, GDL,...
-                loss = loss_function(pred, Y, batch_loss)
-            
+                elif d['loss']=='MD_loss':
+                    loss = loss_function(pred, Y, alpha, Y_MDF, parMD_weight, parMD_pot)
+                
+                else: # Dice, FTL, ASD, BCE, GDL,...
+                    loss = loss_function(pred, Y, batch_loss)
             
             # break
             if torch.isnan(loss):# Filtrar errores utilizando BSL_LC y CBL, sobretodo en DS WMH2017
@@ -356,18 +374,24 @@ def Training():
             dice = torch.mean(dice)
             # print(f'train dice:{dice} {dice.shape} {dice.dtype}')
             lista_dice_train.append(torch.mean(dice).item())
-        
-            # Sin mixed precision
-            loss.backward()
-            optimizer.step()
-            optimizer.zero_grad()
             
-            # # # Backpropagation with mixed precision
+            if USE_AMP:
+                # Backpropagation with mixed precision
+                scaler.scale(loss).backward()
+                scaler.step(optimizer)
+                scaler.update()
+            else:
+                # Sin mixed precision
+                loss.backward()
+                optimizer.step()
+                optimizer.zero_grad()
+            
+            # # El "scaler" funciona igual en ambos casos (real o _NullScaler)
             # scaler.scale(loss).backward()
+            # scaler.unscale_(optimizer)      # seguro también con _NullScaler
+            # # opcional: torch.nn.utils.clip_grad_norm_(model.parameters(), 2.0)
             # scaler.step(optimizer)
             # scaler.update()
-            # # optimizer.zero_grad() # set_to_none=True here can modestly improve performance
-            # optimizer.zero_grad(set_to_none=True)
         
             # break
     
@@ -378,338 +402,352 @@ def Training():
         # continue
         # return None
         
-# # =============================================================================
-# #       Validación
-# # =============================================================================
-#         print('validation...')
-#         tiempo_validation=time()
-#         model.eval()
-#         lista_loss_val = []
-#         lista_dice_val = []
-#         for tensores in val_dataloader:
-#             if d['loss'] == 'HD_loss':
-#                 X, Y, Y_DTM = tensores
-#                 Y_DTM = Y_DTM.to(device)
-#             elif d['loss'] == 'Boundary_loss':
-#                 X, Y, Y_SDF = tensores
-#                 Y_SDF = Y_SDF.to(device)
-#             elif d['loss'] == 'ABL':
-#                 X, Y, GTB = tensores
-#                 GTB = GTB.to(device)
-#             elif d['loss'] == 'CBL':
-#                 X, Y, CBL = tensores
-#                 CBL = CBL.to(device)
-#             elif d['loss']=='MD_loss':
-#                 X, Y, Y_MDF = tensores
-#                 Y_MDF = Y_MDF.to(device)
-#             else: # Dice, FTL, ASD, BCE, ... que solo necesitan entrada X y target Y
-#                 X, Y = tensores
-#             X, Y = X.to(device), Y.to(device)
+# =============================================================================
+#       Validación
+# =============================================================================
+        print('validation...')
+        tiempo_validation=time()
+        model.eval()
+        lista_loss_val = []
+        lista_dice_val = []
+        for tensores in val_dataloader:
+            if d['loss'] == 'HD_loss':
+                X, Y, Y_DTM = tensores
+                Y_DTM = Y_DTM.to(device)
+            elif d['loss'] == 'Boundary_loss':
+                X, Y, Y_SDF = tensores
+                Y_SDF = Y_SDF.to(device)
+            elif d['loss'] == 'ABL':
+                X, Y, GTB = tensores
+                GTB = GTB.to(device)
+            elif d['loss'] == 'CBL':
+                X, Y, CBL = tensores
+                CBL = CBL.to(device)
+            elif d['loss']=='MD_loss':
+                X, Y, Y_MDF = tensores
+                Y_MDF = Y_MDF.to(device)
+            else: # Dice, FTL, ASD, BCE, ... que solo necesitan entrada X y target Y
+                X, Y = tensores
+            X, Y = X.to(device), Y.to(device)
             
-#             with torch.autocast(device_type=device, dtype=torch.float16, enabled=use_amp): # mixed precision
-#                 if d['loss'] == 'CBL':
-#                     pred, bottle_neck, last_conv = model(X)
-#                 else:
-#                     pred = model(X)
+            # with torch.autocast(device_type=device, dtype=torch.float16, enabled=use_amp): # mixed precision
+            with autocast(device_type=device, enabled=USE_AMP):
+                if 'MONAI' in d['red']:
+                    logits = model(X)
+                    pred = torch.softmax(logits, dim=1)
+                elif d['loss'] == 'CBL':
+                    pred, bottle_neck, last_conv = model(X)
+                else:
+                    pred = model(X)
                 
-#                 if d['loss'] == 'HD_loss':
-#                     pred_DTM = bbg.DTM_2D(pred[:,1].detach().cpu().numpy())# procesa cada una de las N=batch_size slides
-#                     pred_DTM = torch.from_numpy(pred_DTM); pred_DTM = pred_DTM.to(device)
-#                     loss = loss_function(pred, Y, Y_DTM, pred_DTM, alpha, batch_loss)# para HD_loss
-#                 elif d['loss'] == 'Boundary_loss':
-#                     loss = loss_function(pred, Y, Y_SDF, alpha, batch_loss)# para Boundary_loss
-#                 elif d['loss'] == 'ABL':
-#                     loss = loss_function(pred, GTB, Y, alpha, wa_ABL)# para ABL
-#                 elif d['loss'] == 'BSLoss':
-#                     loss = loss_function(torch.unsqueeze(pred[:,1],1), torch.unsqueeze(Y[:,1],1), alpha_BS)# para BSLoss
-#                 elif d['loss'] == 'BSL_LC':
-#                     loss = loss_function(torch.unsqueeze(pred[:,1],1), torch.unsqueeze(Y[:,1],1), alpha_BS, beta_BS_LC)# para BSL_LC
-#                 elif d['loss'] == 'FT_loss':
-#                     loss = loss_function(pred, Y, alpha_TL, beta_TL, gamma, batch_loss)# para Focal tversky loss
-#                 elif d['loss'] == 'CBL':
-#                     loss = loss_function(pred, Y, CBL, bottle_neck, last_conv, alpha, batch_loss, gamma_CBL)# para CBL
+                if d['loss'] == 'HD_loss':
+                    pred_DTM = bbg.DTM_2D(pred[:,1].detach().cpu().numpy())# procesa cada una de las N=batch_size slides
+                    pred_DTM = torch.from_numpy(pred_DTM); pred_DTM = pred_DTM.to(device)
+                    loss = loss_function(pred, Y, Y_DTM, pred_DTM, alpha, batch_loss)# para HD_loss
+                elif d['loss'] == 'Boundary_loss':
+                    loss = loss_function(pred, Y, Y_SDF, alpha, batch_loss)# para Boundary_loss
+                elif d['loss'] == 'ABL':
+                    loss = loss_function(pred, GTB, Y, alpha, wa_ABL)# para ABL
+                elif d['loss'] == 'BSLoss':
+                    loss = loss_function(torch.unsqueeze(pred[:,1],1), torch.unsqueeze(Y[:,1],1), alpha_BS)# para BSLoss
+                elif d['loss'] == 'BSL_LC':
+                    loss = loss_function(torch.unsqueeze(pred[:,1],1), torch.unsqueeze(Y[:,1],1), alpha_BS, beta_BS_LC)# para BSL_LC
+                elif d['loss'] == 'FT_loss':
+                    loss = loss_function(pred, Y, alpha_TL, beta_TL, gamma, batch_loss)# para Focal tversky loss
+                elif d['loss'] == 'CBL':
+                    loss = loss_function(pred, Y, CBL, bottle_neck, last_conv, alpha, batch_loss, gamma_CBL)# para CBL
                 
-#                 elif d['loss']=='MD_loss':
-#                     loss = loss_function(pred, Y, alpha, Y_MDF, parMD_weight, parMD_pot)
+                elif d['loss']=='MD_loss':
+                    loss = loss_function(pred, Y, alpha, Y_MDF, parMD_weight, parMD_pot)
                 
-#                 else: # Dice, FTL, ASD, BCE, GDL,...
-#                     loss = loss_function(pred, Y, batch_loss)
+                else: # Dice, FTL, ASD, BCE, GDL,...
+                    loss = loss_function(pred, Y, batch_loss)
 
             
-#             lista_loss_val.append(loss.item())
-#             # break###
+            lista_loss_val.append(loss.item())
+            # break###
             
-#         # return None ###
-#         pacientes_pred_paciente = []
-#         for paciente in pacientes_val[:]:
-#             Y_paciente_pred = np.zeros((160,2,160,192),dtype=np.float32)
-#             Y_paciente = np.zeros((160,2,160,192),dtype=np.float32)
-#             ini = 0
-#             # fin = batch_size
-#             fin = batch_size_val
-#             for tensores in d_dataloader[paciente]:
-#                 X, Y = tensores
-#                 X = X.to(device)
-#                 if d['loss'] == 'CBL':
-#                     pred, bottle_neck, last_conv = model(X)
-#                 else:
-#                     pred = model(X)
-#                 # Detectar si hay problemas con pred, ya que se cae aveces
-#                 pred = pred.detach().cpu().numpy()
-#                 Y = Y.detach().cpu().numpy()
-#                 Y_paciente_pred[ini:fin] = pred
-#                 Y_paciente[ini:fin] = Y
-#                 ini = fin
-#                 # fin += batch_size
-#                 fin += batch_size_val
-#             Y_paciente_pred = Y_paciente_pred[:,1,:,:]# NCHW->NHW
-#             Y_paciente = Y_paciente[:,1,:,:]# NCHW->NHW
-#             Y_paciente_pred = np.transpose(Y_paciente_pred, axes=(1,2,0)).squeeze()# HWN. Reordenar slides en img 3D
-#             Y_paciente = np.transpose(Y_paciente, axes=(1,2,0)).squeeze()# HWN
-#             dice = bbg.Dice_metric(Y_paciente_pred, Y_paciente)
-#             lista_dice_val.append(dice)
-            
-#             if epoca % freq_metricas == 0:# Guardar volúmenes para obtener métricas en paralelo
-#                 pacientes_pred_paciente.append([Y_paciente_pred, Y_paciente, paciente])
-#         # =============================================================================
-#         #   Guardar métricas después de umbralizar salida softmax Y_paciente_pred
-#         # =============================================================================
-#         if epoca % freq_metricas == 0:
-#             # =============================================================================
-#             # Paralelizar 
-#             # =============================================================================
-#             resultados = []
-#             with ProcessPoolExecutor() as executor:
-#                 functions = []
-#                 for Y_paciente_pred, Y_paciente, paciente in pacientes_pred_paciente:
-#                     function = executor.submit(Get_s_umbral, Y_paciente_pred, 0.5, Y_paciente, paciente)
-#                     functions.append(function)
-#                 for function in as_completed(functions):
-#                     resultados.append(function.result())
-#             dr_val = {}
-#             for r in resultados:
-#                 for dato in r.split()[2:]:
-#                     llave,valor=dato.split(':')
-#                     if llave in ['ASSD','ASSD95','HD','HD95','HD90','RVD','F1','AUC_ROC','AUC_PR','TPR','PPV','F2']:
-#                         if llave not in dr_val:
-#                             dr_val[llave]=[]
-#                         dr_val[llave].append(float(valor))
-#             d_epocas['HD_val'].append(np.around(np.mean(dr_val['HD']),8))
-#             d_epocas['HD95_val'].append(np.around(np.mean(dr_val['HD95']),8))
-#             d_epocas['HD90_val'].append(np.around(np.mean(dr_val['HD90']),8))
-#             d_epocas['ASSD_val'].append(np.around(np.mean(dr_val['ASSD']),8))
-#             d_epocas['ASSD95_val'].append(np.around(np.mean(dr_val['ASSD95']),8))
-#             d_epocas['RVD_val'].append(np.around(np.mean(dr_val['RVD']),8))
-#             d_epocas['AUC_ROC_val'].append(np.around(np.mean(dr_val['AUC_ROC']),8))
-#             d_epocas['AUC_PR_val'].append(np.around(np.mean(dr_val['AUC_PR']),8))
-#             d_epocas['F1_val'].append(np.around(np.mean(dr_val['F1']),8))
-#             d_epocas['TPR_val'].append(np.around(np.mean(dr_val['TPR']),8))
-#             d_epocas['PPV_val'].append(np.around(np.mean(dr_val['PPV']),8))
-#             d_epocas['F2_val'].append(np.around(np.mean(dr_val['F2']),8))
-#         # =============================================================================
-#         d_epocas['loss_val'].append(np.around(np.nanmean(lista_loss_val),8))
-#         d_epocas['dice_val'].append(np.around(np.nanmean(lista_dice_val),8))
-#         print(f'loss_epoca_val: {d_epocas["loss_val"][-1]} - dice_epoca_val: {d_epocas["dice_val"][-1]}')
-#         print(f'tiempo_validation:{round(time()-tiempo_validation,2)}[sg]')
-        
-# # =============================================================================
-# #       Testing
-# # =============================================================================
-#         print('testing...')
-#         tiempo_testing=time()
-#         # No importa el sufijo _val ya que las estructuras se reinician vacías
-#         model.eval()
-#         lista_loss_val = []
-#         lista_dice_val = []
-#         # for tensores in test_dataloader:
-#         for tensores in val_dataloader:
-#             if d['loss'] == 'HD_loss':
-#                 X, Y, Y_DTM = tensores
-#                 Y_DTM = Y_DTM.to(device)
-#             elif d['loss'] == 'Boundary_loss':
-#                 X, Y, Y_SDF = tensores
-#                 Y_SDF = Y_SDF.to(device)
-#             elif d['loss'] == 'ABL':
-#                 X, Y, GTB = tensores
-#                 GTB = GTB.to(device)
-#             elif d['loss'] == 'CBL':
-#                 X, Y, CBL = tensores
-#                 CBL = CBL.to(device)
-#             elif d['loss']=='MD_loss':
-#                 X, Y, Y_MDF = tensores
-#                 Y_MDF = Y_MDF.to(device)
-#             else: # Dice, FTL, ASD, BCE, ... que solo necesitan entrada X y target Y
-#                 X, Y = tensores
-#             X, Y = X.to(device), Y.to(device)
-            
-#             with torch.autocast(device_type=device, dtype=torch.float16, enabled=use_amp): # mixed precision
-#                 if d['loss'] == 'CBL':
-#                     pred, bottle_neck, last_conv = model(X)
-#                 else:
-#                     pred = model(X)
+        # return None ###
+        pacientes_pred_paciente = []
+        for paciente in pacientes_val[:]:
+            Y_paciente_pred = np.zeros((160,2,160,192),dtype=np.float32)
+            Y_paciente = np.zeros((160,2,160,192),dtype=np.float32)
+            ini = 0
+            # fin = batch_size
+            fin = batch_size_val
+            for tensores in d_dataloader[paciente]:
+                X, Y = tensores
+                X = X.to(device)
+                if 'MONAI' in d['red']:
+                    logits = model(X)
+                    pred = torch.softmax(logits, dim=1)
+                elif d['loss'] == 'CBL':
+                    pred, bottle_neck, last_conv = model(X)
+                else:
+                    pred = model(X)
                 
-#                 if d['loss'] == 'HD_loss':
-#                     pred_DTM = bbg.DTM_2D(pred[:,1].detach().cpu().numpy())# procesa cada una de las N=batch_size slides
-#                     pred_DTM = torch.from_numpy(pred_DTM); pred_DTM = pred_DTM.to(device)
-#                     loss = loss_function(pred, Y, Y_DTM, pred_DTM, alpha, batch_loss)# para HD_loss
-#                 elif d['loss'] == 'Boundary_loss':
-#                     loss = loss_function(pred, Y, Y_SDF, alpha, batch_loss)# para Boundary_loss
-#                 elif d['loss'] == 'ABL':
-#                     loss = loss_function(pred, GTB, Y, alpha, wa_ABL)# para ABL
-#                 elif d['loss'] == 'BSLoss':
-#                     loss = loss_function(torch.unsqueeze(pred[:,1],1), torch.unsqueeze(Y[:,1],1), alpha_BS)# para BSLoss
-#                 elif d['loss'] == 'BSL_LC':
-#                     loss = loss_function(torch.unsqueeze(pred[:,1],1), torch.unsqueeze(Y[:,1],1), alpha_BS, beta_BS_LC)# para BSL_LC
-#                 elif d['loss'] == 'FT_loss':
-#                     loss = loss_function(pred, Y, alpha_TL, beta_TL, gamma, batch_loss)# para Focal tversky loss
-#                 elif d['loss'] == 'CBL':
-#                     loss = loss_function(pred, Y, CBL, bottle_neck, last_conv, alpha, batch_loss, gamma_CBL)# para CBL
+                # Detectar si hay problemas con pred, ya que se cae aveces
+                pred = pred.detach().cpu().numpy()
+                Y = Y.detach().cpu().numpy()
+                Y_paciente_pred[ini:fin] = pred
+                Y_paciente[ini:fin] = Y
+                ini = fin
+                # fin += batch_size
+                fin += batch_size_val
+            Y_paciente_pred = Y_paciente_pred[:,1,:,:]# NCHW->NHW
+            Y_paciente = Y_paciente[:,1,:,:]# NCHW->NHW
+            Y_paciente_pred = np.transpose(Y_paciente_pred, axes=(1,2,0)).squeeze()# HWN. Reordenar slides en img 3D
+            Y_paciente = np.transpose(Y_paciente, axes=(1,2,0)).squeeze()# HWN
+            dice = bbg.Dice_metric(Y_paciente_pred, Y_paciente)
+            lista_dice_val.append(dice)
+            
+            if epoca % freq_metricas == 0:# Guardar volúmenes para obtener métricas en paralelo
+                pacientes_pred_paciente.append([Y_paciente_pred, Y_paciente, paciente])
+        # =============================================================================
+        #   Guardar métricas después de umbralizar salida softmax Y_paciente_pred
+        # =============================================================================
+        if epoca % freq_metricas == 0:
+            # =============================================================================
+            # Paralelizar 
+            # =============================================================================
+            resultados = []
+            with ProcessPoolExecutor() as executor:
+                functions = []
+                for Y_paciente_pred, Y_paciente, paciente in pacientes_pred_paciente:
+                    function = executor.submit(Get_s_umbral, Y_paciente_pred, 0.5, Y_paciente, paciente)
+                    functions.append(function)
+                for function in as_completed(functions):
+                    resultados.append(function.result())
+            dr_val = {}
+            for r in resultados:
+                for dato in r.split()[2:]:
+                    llave,valor=dato.split(':')
+                    if llave in ['ASSD','ASSD95','HD','HD95','HD90','RVD','F1','AUC_ROC','AUC_PR','TPR','PPV','F2']:
+                        if llave not in dr_val:
+                            dr_val[llave]=[]
+                        dr_val[llave].append(float(valor))
+            d_epocas['HD_val'].append(np.around(np.mean(dr_val['HD']),8))
+            d_epocas['HD95_val'].append(np.around(np.mean(dr_val['HD95']),8))
+            d_epocas['HD90_val'].append(np.around(np.mean(dr_val['HD90']),8))
+            d_epocas['ASSD_val'].append(np.around(np.mean(dr_val['ASSD']),8))
+            d_epocas['ASSD95_val'].append(np.around(np.mean(dr_val['ASSD95']),8))
+            d_epocas['RVD_val'].append(np.around(np.mean(dr_val['RVD']),8))
+            d_epocas['AUC_ROC_val'].append(np.around(np.mean(dr_val['AUC_ROC']),8))
+            d_epocas['AUC_PR_val'].append(np.around(np.mean(dr_val['AUC_PR']),8))
+            d_epocas['F1_val'].append(np.around(np.mean(dr_val['F1']),8))
+            d_epocas['TPR_val'].append(np.around(np.mean(dr_val['TPR']),8))
+            d_epocas['PPV_val'].append(np.around(np.mean(dr_val['PPV']),8))
+            d_epocas['F2_val'].append(np.around(np.mean(dr_val['F2']),8))
+        # =============================================================================
+        d_epocas['loss_val'].append(np.around(np.nanmean(lista_loss_val),8))
+        d_epocas['dice_val'].append(np.around(np.nanmean(lista_dice_val),8))
+        print(f'loss_epoca_val: {d_epocas["loss_val"][-1]} - dice_epoca_val: {d_epocas["dice_val"][-1]}')
+        print(f'tiempo_validation:{round(time()-tiempo_validation,2)}[sg]')
+        
+# =============================================================================
+#       Testing
+# =============================================================================
+        print('testing...')
+        tiempo_testing=time()
+        # No importa el sufijo _val ya que las estructuras se reinician vacías
+        model.eval()
+        lista_loss_val = []
+        lista_dice_val = []
+        # for tensores in test_dataloader:
+        for tensores in val_dataloader:
+            if d['loss'] == 'HD_loss':
+                X, Y, Y_DTM = tensores
+                Y_DTM = Y_DTM.to(device)
+            elif d['loss'] == 'Boundary_loss':
+                X, Y, Y_SDF = tensores
+                Y_SDF = Y_SDF.to(device)
+            elif d['loss'] == 'ABL':
+                X, Y, GTB = tensores
+                GTB = GTB.to(device)
+            elif d['loss'] == 'CBL':
+                X, Y, CBL = tensores
+                CBL = CBL.to(device)
+            elif d['loss']=='MD_loss':
+                X, Y, Y_MDF = tensores
+                Y_MDF = Y_MDF.to(device)
+            else: # Dice, FTL, ASD, BCE, ... que solo necesitan entrada X y target Y
+                X, Y = tensores
+            X, Y = X.to(device), Y.to(device)
+            
+            with autocast(device_type=device, enabled=USE_AMP):
+                if 'MONAI' in d['red']:
+                    logits = model(X)
+                    pred = torch.softmax(logits, dim=1)
+                elif d['loss'] == 'CBL':
+                    pred, bottle_neck, last_conv = model(X)
+                else:
+                    pred = model(X)
                 
-#                 elif d['loss']=='MD_loss':
-#                     loss = loss_function(pred, Y, alpha, Y_MDF, parMD_weight, parMD_pot)
+                if d['loss'] == 'HD_loss':
+                    pred_DTM = bbg.DTM_2D(pred[:,1].detach().cpu().numpy())# procesa cada una de las N=batch_size slides
+                    pred_DTM = torch.from_numpy(pred_DTM); pred_DTM = pred_DTM.to(device)
+                    loss = loss_function(pred, Y, Y_DTM, pred_DTM, alpha, batch_loss)# para HD_loss
+                elif d['loss'] == 'Boundary_loss':
+                    loss = loss_function(pred, Y, Y_SDF, alpha, batch_loss)# para Boundary_loss
+                elif d['loss'] == 'ABL':
+                    loss = loss_function(pred, GTB, Y, alpha, wa_ABL)# para ABL
+                elif d['loss'] == 'BSLoss':
+                    loss = loss_function(torch.unsqueeze(pred[:,1],1), torch.unsqueeze(Y[:,1],1), alpha_BS)# para BSLoss
+                elif d['loss'] == 'BSL_LC':
+                    loss = loss_function(torch.unsqueeze(pred[:,1],1), torch.unsqueeze(Y[:,1],1), alpha_BS, beta_BS_LC)# para BSL_LC
+                elif d['loss'] == 'FT_loss':
+                    loss = loss_function(pred, Y, alpha_TL, beta_TL, gamma, batch_loss)# para Focal tversky loss
+                elif d['loss'] == 'CBL':
+                    loss = loss_function(pred, Y, CBL, bottle_neck, last_conv, alpha, batch_loss, gamma_CBL)# para CBL
                 
-#                 else: # Dice, FTL, ASD, BCE, GDL,...
-#                     loss = loss_function(pred, Y, batch_loss)
+                elif d['loss']=='MD_loss':
+                    loss = loss_function(pred, Y, alpha, Y_MDF, parMD_weight, parMD_pot)
+                
+                else: # Dice, FTL, ASD, BCE, GDL,...
+                    loss = loss_function(pred, Y, batch_loss)
             
             
-#             lista_loss_val.append(loss.item())
-#             # break###
+            lista_loss_val.append(loss.item())
+            # break###
         
-#         pacientes_pred_paciente = []
-#         for paciente in pacientes_test[:]:
-#             # print(paciente)
-#             Y_paciente_pred = np.zeros((160,2,160,192),dtype=np.float32)
-#             Y_paciente = np.zeros((160,2,160,192),dtype=np.float32)
-#             ini = 0
-#             # fin = batch_size
-#             fin = batch_size_val
-#             for tensores in d_dataloader[paciente]:
-#                 X, Y = tensores
-#                 X = X.to(device)
-#                 if d['loss'] == 'CBL':
-#                     pred, bottle_neck, last_conv = model(X)
-#                 else:
-#                     pred = model(X)
-#                 pred = pred.detach().cpu().numpy()
-#                 Y = Y.detach().cpu().numpy()
-#                 Y_paciente_pred[ini:fin] = pred
-#                 Y_paciente[ini:fin] = Y
-#                 ini = fin
-#                 # fin += batch_size
-#                 fin += batch_size_val
-#             Y_paciente_pred = Y_paciente_pred[:,1,:,:]# NCHW->NHW
-#             Y_paciente = Y_paciente[:,1,:,:]# NCHW->NHW
-#             Y_paciente_pred = np.transpose(Y_paciente_pred, axes=(1,2,0)).squeeze()# HWN. Reordenar slides en img 3D
-#             Y_paciente = np.transpose(Y_paciente, axes=(1,2,0)).squeeze()# HWN
-#             dice = bbg.Dice_metric(Y_paciente_pred, Y_paciente)
-#             lista_dice_val.append(dice)
+        pacientes_pred_paciente = []
+        for paciente in pacientes_test[:]:
+            # print(paciente)
+            Y_paciente_pred = np.zeros((160,2,160,192),dtype=np.float32)
+            Y_paciente = np.zeros((160,2,160,192),dtype=np.float32)
+            ini = 0
+            # fin = batch_size
+            fin = batch_size_val
+            for tensores in d_dataloader[paciente]:
+                X, Y = tensores
+                X = X.to(device)
+                if 'MONAI' in d['red']:
+                    logits = model(X)
+                    pred = torch.softmax(logits, dim=1)
+                elif d['loss'] == 'CBL':
+                    pred, bottle_neck, last_conv = model(X)
+                else:
+                    pred = model(X)
+                
+                pred = pred.detach().cpu().numpy()
+                Y = Y.detach().cpu().numpy()
+                Y_paciente_pred[ini:fin] = pred
+                Y_paciente[ini:fin] = Y
+                ini = fin
+                # fin += batch_size
+                fin += batch_size_val
+            Y_paciente_pred = Y_paciente_pred[:,1,:,:]# NCHW->NHW
+            Y_paciente = Y_paciente[:,1,:,:]# NCHW->NHW
+            Y_paciente_pred = np.transpose(Y_paciente_pred, axes=(1,2,0)).squeeze()# HWN. Reordenar slides en img 3D
+            Y_paciente = np.transpose(Y_paciente, axes=(1,2,0)).squeeze()# HWN
+            dice = bbg.Dice_metric(Y_paciente_pred, Y_paciente)
+            lista_dice_val.append(dice)
             
-#             if epoca % freq_metricas == 0:# Guardar volúmenes para obtener métricas en paralelo
-#                 pacientes_pred_paciente.append([Y_paciente_pred, Y_paciente, paciente])
-#         # =============================================================================
-#         #   Guardar métricas después de umbralizar salida softmax Y_paciente_pred
-#         # =============================================================================
-#         if epoca % freq_metricas == 0:
-#             # =============================================================================
-#             # Paralelizar 
-#             # =============================================================================
-#             resultados = []
-#             with ProcessPoolExecutor() as executor:
-#                 functions = []
-#                 for Y_paciente_pred, Y_paciente, paciente in pacientes_pred_paciente:
-#                     function = executor.submit(Get_s_umbral, Y_paciente_pred, 0.5, Y_paciente, paciente)
-#                     functions.append(function)
-#                 for function in as_completed(functions):
-#                     resultados.append(function.result())
-#             dr_val = {}
-#             for r in resultados:
-#                 for dato in r.split()[2:]:
-#                     llave,valor=dato.split(':')
-#                     if llave in ['ASSD','ASSD95','HD','HD95','HD90','RVD','F1','AUC_ROC','AUC_PR','TPR','PPV','F2']:
-#                         if llave not in dr_val:
-#                             dr_val[llave]=[]
-#                         dr_val[llave].append(float(valor))
+            if epoca % freq_metricas == 0:# Guardar volúmenes para obtener métricas en paralelo
+                pacientes_pred_paciente.append([Y_paciente_pred, Y_paciente, paciente])
+        # =============================================================================
+        #   Guardar métricas después de umbralizar salida softmax Y_paciente_pred
+        # =============================================================================
+        if epoca % freq_metricas == 0:
+            # =============================================================================
+            # Paralelizar 
+            # =============================================================================
+            resultados = []
+            with ProcessPoolExecutor() as executor:
+                functions = []
+                for Y_paciente_pred, Y_paciente, paciente in pacientes_pred_paciente:
+                    function = executor.submit(Get_s_umbral, Y_paciente_pred, 0.5, Y_paciente, paciente)
+                    functions.append(function)
+                for function in as_completed(functions):
+                    resultados.append(function.result())
+            dr_val = {}
+            for r in resultados:
+                for dato in r.split()[2:]:
+                    llave,valor=dato.split(':')
+                    if llave in ['ASSD','ASSD95','HD','HD95','HD90','RVD','F1','AUC_ROC','AUC_PR','TPR','PPV','F2']:
+                        if llave not in dr_val:
+                            dr_val[llave]=[]
+                        dr_val[llave].append(float(valor))
         
-#             d_epocas['HD_test'].append(np.around(np.mean(dr_val['HD']),8))
-#             d_epocas['HD95_test'].append(np.around(np.mean(dr_val['HD95']),8))
-#             d_epocas['HD90_test'].append(np.around(np.mean(dr_val['HD90']),8))
-#             d_epocas['ASSD_test'].append(np.around(np.mean(dr_val['ASSD']),8))
-#             d_epocas['ASSD95_test'].append(np.around(np.mean(dr_val['ASSD95']),8))
-#             d_epocas['RVD_test'].append(np.around(np.mean(dr_val['RVD']),8))
-#             d_epocas['AUC_ROC_test'].append(np.around(np.mean(dr_val['AUC_ROC']),8))
-#             d_epocas['AUC_PR_test'].append(np.around(np.mean(dr_val['AUC_PR']),8))
-#             d_epocas['F1_test'].append(np.around(np.mean(dr_val['F1']),8))
-#             d_epocas['TPR_test'].append(np.around(np.mean(dr_val['TPR']),8))
-#             d_epocas['PPV_test'].append(np.around(np.mean(dr_val['PPV']),8))
-#             d_epocas['F2_test'].append(np.around(np.mean(dr_val['F2']),8))
-#         # =============================================================================
-#         d_epocas['loss_test'].append(np.around(np.nanmean(lista_loss_val),8))
-#         d_epocas['dice_test'].append(np.around(np.nanmean(lista_dice_val),8))
-#         print(f'loss_epoca_test: {d_epocas["loss_test"][-1]} - dice_epoca_test: {d_epocas["dice_test"][-1]}')
-#         print(f'tiempo_testing:{round(time()-tiempo_testing,2)}[sg]')
+            d_epocas['HD_test'].append(np.around(np.mean(dr_val['HD']),8))
+            d_epocas['HD95_test'].append(np.around(np.mean(dr_val['HD95']),8))
+            d_epocas['HD90_test'].append(np.around(np.mean(dr_val['HD90']),8))
+            d_epocas['ASSD_test'].append(np.around(np.mean(dr_val['ASSD']),8))
+            d_epocas['ASSD95_test'].append(np.around(np.mean(dr_val['ASSD95']),8))
+            d_epocas['RVD_test'].append(np.around(np.mean(dr_val['RVD']),8))
+            d_epocas['AUC_ROC_test'].append(np.around(np.mean(dr_val['AUC_ROC']),8))
+            d_epocas['AUC_PR_test'].append(np.around(np.mean(dr_val['AUC_PR']),8))
+            d_epocas['F1_test'].append(np.around(np.mean(dr_val['F1']),8))
+            d_epocas['TPR_test'].append(np.around(np.mean(dr_val['TPR']),8))
+            d_epocas['PPV_test'].append(np.around(np.mean(dr_val['PPV']),8))
+            d_epocas['F2_test'].append(np.around(np.mean(dr_val['F2']),8))
+        # =============================================================================
+        d_epocas['loss_test'].append(np.around(np.nanmean(lista_loss_val),8))
+        d_epocas['dice_test'].append(np.around(np.nanmean(lista_dice_val),8))
+        print(f'loss_epoca_test: {d_epocas["loss_test"][-1]} - dice_epoca_test: {d_epocas["dice_test"][-1]}')
+        print(f'tiempo_testing:{round(time()-tiempo_testing,2)}[sg]')
         
-# # =============================================================================
-# #       Early-stopping
-# # =============================================================================
-#         epocas_completadas = epoca
+# =============================================================================
+#       Early-stopping
+# =============================================================================
+        epocas_completadas = epoca
         
-#         if d['ES']=='T' and epoca >= start_es and flag_es:
-#             # print('Validation-Earling Stopping...')
-#             val_F1_promedio = d_epocas['dice_val'][-1]
-#             contador_epocas_patience+=1
-#             # print('contador_epocas_patience=',contador_epocas_patience, epoca)
-#             if val_F1_promedio > promedio_val_F1_maximo:
-#                 promedio_val_F1_maximo = val_F1_promedio
-#                 contador_epocas_patience = 0
-#             if contador_epocas_patience==patience:
-#                 print('contador_epocas_patience=',contador_epocas_patience, epoca)
-#                 print('Terminar entrenamiento--'*10)
-#                 # nombre_modelo_es = 'k'+str(k)+'_'+str(epoca)+'.pth'
-#                 nombre_modelo_es = 'k'+str(k)+'_es_'+str(epoca)+'.pth'
-#                 # nombre_modelo = nombre_modelo_es
-#                 torch.save(model, os.path.join(path_carpeta_ce,nombre_modelo_es))
-#                 flag_es = False
-#                 break# Termina el entrenamiento
+        if d['ES']=='T' and epoca >= start_es and flag_es:
+            # print('Validation-Earling Stopping...')
+            val_F1_promedio = d_epocas['dice_val'][-1]
+            contador_epocas_patience+=1
+            # print('contador_epocas_patience=',contador_epocas_patience, epoca)
+            if val_F1_promedio > promedio_val_F1_maximo:
+                promedio_val_F1_maximo = val_F1_promedio
+                contador_epocas_patience = 0
+            if contador_epocas_patience==patience:
+                print('contador_epocas_patience=',contador_epocas_patience, epoca)
+                print('Terminar entrenamiento--'*10)
+                # nombre_modelo_es = 'k'+str(k)+'_'+str(epoca)+'.pth'
+                nombre_modelo_es = 'k'+str(k)+'_es_'+str(epoca)+'.pth'
+                # nombre_modelo = nombre_modelo_es
+                torch.save(model, os.path.join(path_carpeta_ce,nombre_modelo_es))
+                flag_es = False
+                break# Termina el entrenamiento
         
-#         epocas_completadas = epoca
-#         print(f'tiempo_epoca:{round(time()-tiempo_epoca,2)}[sg]')
-# # =============================================================================
+        print(f'tiempo_epoca:{round(time()-tiempo_epoca,2)}[sg]')
+# =============================================================================
         
-# # =============================================================================
-# #   Guardar modelo e historial del entrenamiento
-# # =============================================================================
-#     # if flag_es:# Si no hubo early-stopping
-#     #     nombre_modelo_es = 'k'+str(k)+'_'+str(epoca)+'.pth'
-#     #     torch.save(model, os.path.join(path_carpeta_ce,nombre_modelo))
-#     # =========================================================================
-#     t_fin = time()
-#     # print('d_epocas:',d_epocas)
-#     nombre_ae = 'entrenamiento.txt'
-#     if nombre_ae not in os.listdir(path_carpeta_ce):
-#         archivo_e = open(path_carpeta_ce+'/'+nombre_ae, 'w')
-#     else:
-#         archivo_e = open(path_carpeta_ce+'/'+nombre_ae, 'a')
+# =============================================================================
+#   Guardar modelo e historial del entrenamiento
+# =============================================================================
+    # if flag_es:# Si no hubo early-stopping
+    #     nombre_modelo_es = 'k'+str(k)+'_'+str(epoca)+'.pth'
+    #     torch.save(model, os.path.join(path_carpeta_ce,nombre_modelo))
+    # =========================================================================
+    t_fin = time()
+    # print('d_epocas:',d_epocas)
+    nombre_ae = 'entrenamiento.txt'
+    if nombre_ae not in os.listdir(path_carpeta_ce):
+        archivo_e = open(path_carpeta_ce+'/'+nombre_ae, 'w')
+    else:
+        archivo_e = open(path_carpeta_ce+'/'+nombre_ae, 'a')
     
-#     archivo_e.write(path_carpeta_ce+'\n')
-#     archivo_e.write('k'+str(k)+'\n')
-#     archivo_e.write('epocas_completadas='+str(epocas_completadas)+'\n')
-#     archivo_e.write('freq_metricas_umbral='+str(freq_metricas)+'\n')
-#     for llave in d_epocas:
-#         if len(d_epocas[llave])==0:
-#             continue
-#         archivo_e.write(llave+':'+','.join(map(str, np.around(d_epocas[llave], 8)))+'\n')
-#     # =============================================================================
-#     # Tiempo
-#     # =============================================================================
-#     tiempo_entrenamiento = round(t_fin-t_ini)
-#     segundos = tiempo_entrenamiento
-#     horas = segundos // 3600
-#     segundos %= 3600
-#     minutos = segundos // 60
-#     segundos %= 60
-#     hhmmss = str(horas)+':'+str(minutos)+':'+str(segundos)
-#     archivo_e.write('tiempo '+str(tiempo_entrenamiento)+'[sg] '+hhmmss+'\n')
-#     archivo_e.close()
+    archivo_e.write(path_carpeta_ce+'\n')
+    archivo_e.write('k'+str(k)+'\n')
+    archivo_e.write('epocas_completadas='+str(epocas_completadas)+'\n')
+    archivo_e.write('freq_metricas_umbral='+str(freq_metricas)+'\n')
+    for llave in d_epocas:
+        if len(d_epocas[llave])==0:
+            continue
+        archivo_e.write(llave+':'+','.join(map(str, np.around(d_epocas[llave], 8)))+'\n')
+    # =============================================================================
+    # Tiempo
+    # =============================================================================
+    tiempo_entrenamiento = round(t_fin-t_ini)
+    segundos = tiempo_entrenamiento
+    horas = segundos // 3600
+    segundos %= 3600
+    minutos = segundos // 60
+    segundos %= 60
+    hhmmss = str(horas)+':'+str(minutos)+':'+str(segundos)
+    archivo_e.write('tiempo '+str(tiempo_entrenamiento)+'[sg] '+hhmmss+'\n')
+    archivo_e.close()
   
     return None
 

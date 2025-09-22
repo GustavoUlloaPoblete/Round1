@@ -31,15 +31,24 @@ Created on Sun Sep 21 11:21:13 2025
 
 
 
-import torch
-from monai.networks.nets import UNet
-from torchviz import make_dot
+# import torch
+# from monai.networks.nets import UNet
+# from torchviz import make_dot
 
-model = UNet(spatial_dims=3, in_channels=1, out_channels=2,
-             channels=(16,32,64,128), strides=(2,2,2), num_res_units=0)
+# model = UNet(spatial_dims=3, in_channels=1, out_channels=2,
+#              channels=(16,32,64,128), strides=(2,2,2), num_res_units=0)
 
-x = torch.randn(1,1,96,96,96)
-out = model(x)
+# x = torch.randn(1,1,96,96,96)
+# out = model(x)
 
-dot = make_dot(out, params=dict(list(model.named_parameters())))
-dot.render("unet_graph", format="png")
+# dot = make_dot(out, params=dict(list(model.named_parameters())))
+# dot.render("unet_graph", format="png")
+
+
+
+import monai, inspect
+from monai.networks.nets import SwinUNETR
+print(monai.__version__)
+print()
+print(inspect.signature(SwinUNETR))
+

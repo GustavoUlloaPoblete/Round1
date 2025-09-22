@@ -48,8 +48,10 @@ batch_size_val = '8'
 metric = 'Dice_metric'
 opt = 'Adam'
 red= 'Unet'
-red= 'Unet_MONAI'
-mixed_precision = 'T' #;mixed_precision = 'F'
+# red= 'Unet_MONAI'
+# red = 'Attention-Unet_MONAI'
+red = 'SwinUNETR_MONAI'
+mixed_precision = 'T'
 ES = 'T' #;ES = 'F'#Early-stopping
 
 # =============================================================================
