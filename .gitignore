@@ -1,0 +1,13 @@
+# Ignorar todas las carpetas y su contenido
+*/
+
+# Ignorar cachés de Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Ignorar notebooks (opcional)
+# *.ipynb
+
+# Solo se subirán los archivos que estén sueltos en la raíz,
+# como main.py, train.py, utils.py, etc.
