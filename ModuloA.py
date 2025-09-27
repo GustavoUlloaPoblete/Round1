@@ -13,8 +13,8 @@ import numpy as np
 from skimage.segmentation import find_boundaries
 from scipy import ndimage
 from sklearn.covariance import EmpiricalCovariance, OAS, LedoitWolf, GraphicalLasso, GraphicalLassoCV
-# import mahotas
-# import pyfeats
+import mahotas
+import pyfeats
 from scipy.stats import describe
 import os
 from sklearn.decomposition import PCA

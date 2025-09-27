@@ -47,10 +47,11 @@ batch_size='16'
 batch_size_val = '8'
 metric = 'Dice_metric'
 opt = 'Adam'
-red= 'Unet'
-# red= 'Unet_MONAI'
+red = 'Unet'
+# red = 'BasicUnet_MONAI'
+red = 'Unet_MONAI'
 # red = 'Attention-Unet_MONAI'
-red = 'SwinUNETR_MONAI'
+# red = 'SwinUNETR_MONAI'
 mixed_precision = 'T'
 ES = 'T' #;ES = 'F'#Early-stopping
 
@@ -67,7 +68,7 @@ p_assd = '1.0' ;p_assd = 'nan'
 alpha_BS = '0.8' # for Boundary-sensitive loss
 beta_BS_LC = '0.9'
 wa_ABL = '1.0' # for Active boundary loss
-batch_loss = 'T' #;batch_loss = 'F'
+# batch_loss = 'T' #;batch_loss = 'F'
 gamma_CBL = '2.0' # for Conditional boundary loss
 
 umbral_cc = '0' # only slides with number of lesion > 0
@@ -123,7 +124,7 @@ for DS in ['MSSEG2016']:
                             'alpha_TL:'+alpha_TL,'folds:'+folds,'metric:'+metric,'gamma:'+gamma,'alpha_HD:'+alpha_HD,
                             'ES:'+ES,'patience:'+patience,'start_es:'+start_es,'potencia_assd:'+potencia_assd,'beta_ASL:'+beta_ASL,
                             'w_SEL:'+w_SEL,'p_assd:'+p_assd,'umbral_vol_training:'+umbral_vol_training,
-                            'alpha_BS:'+alpha_BS,'beta_BS_LC:'+beta_BS_LC,'wa_ABL:'+wa_ABL,'batch_loss:'+batch_loss,
+                            'alpha_BS:'+alpha_BS,'beta_BS_LC:'+beta_BS_LC,'wa_ABL:'+wa_ABL,#'batch_loss:'+batch_loss,
                             'gamma_CBL:'+gamma_CBL,'batch_size_val:'+batch_size_val]+lista_MDF
                         parametros_base = ' '.join(lista_parametros)
                         print(f'parametros_base: {parametros_base}')

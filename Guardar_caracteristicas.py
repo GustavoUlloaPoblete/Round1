@@ -21,8 +21,8 @@ print('Guardar Caracteristicas:')
 # DS = 'WMH2017'
 
 # for DS in ['MSSEG2016']:
-# for DS in ['ISBI2015']:
-for DS in ['WMH2017']:
+for DS in ['ISBI2015']:
+# for DS in ['WMH2017']:
 # for DS in ['MSSEG2016','ISBI2015','WMH2017']:
 
     if os.uname()[1]=='f15':
@@ -55,7 +55,7 @@ for DS in ['WMH2017']:
     size_ventana_A=None;niveles_hf=None;size_ventana_hf=None
     # tipo_caracteristicas='A'; size_ventana_A = (3,3)
     # tipo_caracteristicas='B'
-    for tipo_caracteristicas,size_ventana_A,niveles_hf,size_ventana_hf in [('A',(3,3),None,None)]:
+    # for tipo_caracteristicas,size_ventana_A,niveles_hf,size_ventana_hf in [('A',(3,3),None,None)]:
     
     # tipo_caracteristicas='GLCM'; niveles_hf=32;size_ventana_hf=(7,7)
     # tipo_caracteristicas='GLRLM'; niveles_hf=32;size_ventana_hf=(7,7)
@@ -66,7 +66,7 @@ for DS in ['WMH2017']:
     # tipo_caracteristicas,niveles_hf,size_ventana_hf=['GLSZM',32,(7,7)]
     
     
-    # for tipo_caracteristicas,niveles_hf,size_ventana_hf in [('GLRLM',32,(7,7))]:
+    for tipo_caracteristicas,niveles_hf,size_ventana_hf in [('GLCM',32,(9,9))]:
     # for tipo_caracteristicas,niveles_hf,size_ventana_hf in [('GLSZM',32,(9,9))]:
     # for tipo_caracteristicas,niveles_hf,size_ventana_hf in [('GLCM',32,(7,7)),('GLRLM',32,(7,7)),('GLSZM',32,(7,7)),
                                                             # ('GLCM',32,(9,9)),('GLRLM',32,(9,9)),('GLSZM',32,(9,9)),
@@ -118,14 +118,15 @@ for DS in ['WMH2017']:
         # for paciente in pacientes[18:20]:#CPU9
         # for paciente in pacientes[20:]:#CPU10
             print('\n',paciente)
-            paciente='11_id11'
-            print('\n',paciente)
+            # paciente='11_id11'
+            # print('\n',paciente)
             # break
             X_canales_slides = np.zeros(size_X,dtype=np.float32)
             Y = np.zeros(size_Y,dtype=np.bool_)
             for slide in range(Y.shape[0]):
                 X_name = '{PACIENTE}_{SLIDE}.npy'.format(PACIENTE=paciente,SLIDE=slide)
                 Y_name = '{PACIENTE}_{SLIDE}_target.npy'.format(PACIENTE=paciente,SLIDE=slide)
+                # print(f'X_name={X_name}, Y_name={Y_name}')
                 X_canales_slides[slide] = np.load(os.path.join(path_base,X_name))
                 Y[slide] = np.load(os.path.join(path_base,Y_name))
             print(f'X_canales_slides:{X_canales_slides.shape}{X_canales_slides.dtype}, Y:{Y.shape}{Y.dtype}')
@@ -158,12 +159,12 @@ for DS in ['WMH2017']:
             
             carpeta_guardar = sufijo
             print(f'carpeta_guardar:{carpeta_guardar}')
-            if carpeta_guardar not in os.listdir(path_caracteristicas):
-                os.mkdir(os.path.join(path_caracteristicas,carpeta_guardar))
+            # if carpeta_guardar not in os.listdir(path_caracteristicas):
+                # os.mkdir(os.path.join(path_caracteristicas,carpeta_guardar))
             
             nombre_file = paciente
             print(os.path.join(path_caracteristicas,carpeta_guardar,nombre_file))
-            np.savez(os.path.join(path_caracteristicas,carpeta_guardar,nombre_file),**dc)
+            # np.savez(os.path.join(path_caracteristicas,carpeta_guardar,nombre_file),**dc)
         # =============================================================================
     
     # print(dc)

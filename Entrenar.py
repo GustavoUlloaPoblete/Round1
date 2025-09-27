@@ -16,17 +16,11 @@ from torch.utils.data import DataLoader
 from skimage.segmentation import find_boundaries
 
 import ModuloA
-# import matplotlib.pyplot as plt
-# from skimage import morphology
+
+from monai.networks.nets import BasicUNet, UNet, AttentionUnet, SwinUNETR
+from torch.amp import autocast, GradScaler
 
 # torch.manual_seed(18)
-
-# import monai
-from monai.networks.nets import UNet, AttentionUnet, SwinUNETR
-from torch.amp import autocast, GradScaler
-# from torch.cuda.amp import autocast, GradScaler
-# from monai.visualize import plot_network
-
 
 def Get_s_umbral(S_theta, umbral, G, paciente): # Creo función para poder paralelizar resultado de cada umbral, aunque terminé solo utilizando umbral 0.5
     S = S_theta > umbral
@@ -190,6 +184,15 @@ def Training():
     print(f'input_dim_2D:{(input_dim_2D)}, H:{H}, W:{W}, C:{C}')
     if d['loss']=='CBL':# Unet con retornos extras además de predicción
         model = getattr(Modelos,'Unet_CBL')(C, 2).to(device)
+    # elif d['red'] == 'BasicUnet_MONAI':
+    #     model = BasicUNet(
+    #         spatial_dims=2,
+    #         in_channels=C,
+    #         out_channels=2,
+    #         features=(32,64,128,256,512,1024),
+    #         act=("relu", {"inplace": True}),
+    #         norm=("batch", {"affine": True}),
+    #         bias=True, dropout=0.0)
     elif d['red'] == 'Unet_MONAI':
         print('Unet_MONAI Unet_MONAI')
         model = UNet(
@@ -199,7 +202,7 @@ def Training():
             channels=(64, 128, 256, 512, 1024),
             strides=(2, 2, 2, 2),#no hay maxpooling
             norm=("batch", {"affine": True}),
-            num_res_units=0
+            num_res_units=1
         )
     elif d['red'] == 'Attention-Unet_MONAI':
         print('Attention-Unet_MONAI')
@@ -210,26 +213,26 @@ def Training():
             channels=(64, 128, 256, 512, 1024),
             strides=(2, 2, 2, 2),#no hay maxpooling
         )
-    elif d['red'] == 'SwinUNETR_MONAI':
-        model = SwinUNETR(
-        in_channels=C,
-        out_channels=2,
-        spatial_dims=2,            # 2 si trabajas en 2D
-        patch_size=2,              # tamaño de patch interno del Swin
-        depths=(2, 2, 2, 2),       # capas por nivel (ajusta VRAM/complejidad)
-        num_heads=(3, 6, 12, 24),  # cabezas por nivel
-        window_size=7,             # ventana de atención
-        feature_size=48,           # base de canales (sube para +capacidad, +VRAM)
-        norm_name="instance",
-        use_checkpoint=True        # activa recompute para ahorrar VRAM ✔
-        )#.to(device)
+    # elif d['red'] == 'SwinUNETR_MONAI':
+    #     model = SwinUNETR(
+    #     in_channels=C,
+    #     out_channels=2,
+    #     spatial_dims=2,            # 2 si trabajas en 2D
+    #     patch_size=2,              # tamaño de patch interno del Swin
+    #     depths=(2, 2, 2, 2),       # capas por nivel (ajusta VRAM/complejidad)
+    #     num_heads=(3, 6, 12, 24),  # cabezas por nivel
+    #     window_size=7,             # ventana de atención
+    #     feature_size=48,           # base de canales (sube para +capacidad, +VRAM)
+    #     norm_name="instance",
+    #     use_checkpoint=True        # activa recompute para ahorrar VRAM ✔
+    #     )#.to(device)
     else:
         model = getattr(Modelos,d['red'])(C, 2).to(device)
     model = model.to(device)
     # print(model)
         
     G_DTM = False; G_SDF = False; GTB=False; CBL=False; MDF=False
-    G_PDF = False; return_slide = False#borrar
+    G_PDF = False; return_slide = False
     if nombre_carpeta_ce not in os.listdir(path_carpeta_principal):
         os.mkdir(path_carpeta_ce)
     if d['loss'] == 'HD_loss':
@@ -243,7 +246,6 @@ def Training():
     # elif d['loss'] == 'MD_loss':
     elif 'MD_loss' in d['loss']:
         MDF = True
-        return_slide = False
     
     print(f'\ndata_path:{data_path}')
     print(f'pacientes_train:{pacientes_train}')
@@ -257,6 +259,9 @@ def Training():
     val_dataset  = ImageDataset(data_path, pacientes_val, tipo='train', G_DTM=G_DTM, G_SDF=G_SDF, GTB=GTB, CBL=CBL,MDF=MDF,G_PDF=G_PDF, return_slide=return_slide)
     val_dataloader  = DataLoader(val_dataset, batch_size=batch_size_val, shuffle=False, drop_last=True)
     
+    test_dataset  = ImageDataset(data_path, pacientes_test, tipo='train', G_DTM=G_DTM, G_SDF=G_SDF, GTB=GTB, CBL=CBL,MDF=MDF,G_PDF=G_PDF, return_slide=return_slide)
+    test_dataloader  = DataLoader(test_dataset, batch_size=batch_size_val, shuffle=False, drop_last=True)
+    
     print('\n'+d['DS']+':')
     print(f'train_dataset: {len(train_dataset)} // {batch_size} = {len(train_dataset)//batch_size}, {len(train_dataset)} % {batch_size} = {len(train_dataset)%batch_size}')
 
@@ -269,13 +274,14 @@ def Training():
                 'HD_val':[],'HD95_val':[],'HD90_val':[],'ASSD_val':[],'ASSD95_val':[],'RVD_val':[],'F1_val':[],'TPR_val':[],'PPV_val':[],'AUC_ROC_val':[],'AUC_PR_val':[],'F2_val':[],
                 'HD_test':[],'HD95_test':[],'HD90_test':[],'ASSD_test':[],'ASSD95_test':[],'RVD_test':[],'F1_test':[],'TPR_test':[],'PPV_test':[],'AUC_ROC_test':[],'AUC_PR_test':[],'F2_test':[]}
     
-    # print("Sumando parametros: ",sum(p.numel() for p in model.parameters()))
-    # total = 0
-    # for name, p in model.named_parameters():
-    #     n = p.numel()
-    #     # print(f"{name:60s} {n}")
-    #     total += n
-    # print("TOTAL:", total)
+    print("Sumando parametros: ",sum(p.numel() for p in model.parameters()))
+    total = 0
+    for name, p in model.named_parameters():
+        n = p.numel()
+        # print(f"{name:60s} {n}")
+        total += n
+    print("TOTAL:", total)
+    # return None
 
     optimizer = torch.optim.Adam(model.parameters(), lr = 0.001)#, eps=1e-07)# eps como keras
     if d['mixed_precision']=="T":
@@ -297,7 +303,7 @@ def Training():
     for epoca in range(1, epocas+1):
         tiempo_epoca = time()
         print(f'\népoca {epoca}',' /', nombre_carpeta_principal,'/',nombre_carpeta_ce,'/ k:',k)
-        if epoca==3: ###########
+        if epoca==5: ###########
             break    ##############
         alpha = max(round(1 - (epoca-1)/epocas, 4), 0.01)# Como en los papers Boundary loss y ABL
         print('---alpha:',alpha)
@@ -342,7 +348,7 @@ def Training():
                 else:
                     pred = model(X)
                     
-                if d['loss'] == 'HD_loss':
+                if d['loss'] == 'HD_loss':# actualizar
                     pred_DTM = bbg.DTM_2D(pred[:,1].detach().cpu().numpy())# procesa cada una de las N=batch_size slides
                     pred_DTM = torch.from_numpy(pred_DTM); pred_DTM = pred_DTM.to(device)
                     loss = loss_function(pred, Y, Y_DTM, pred_DTM, alpha, batch_loss)# para HD_loss
@@ -462,7 +468,6 @@ def Training():
                 
                 else: # Dice, FTL, ASD, BCE, GDL,...
                     loss = loss_function(pred, Y, batch_loss)
-
             
             lista_loss_val.append(loss.item())
             # break###
@@ -550,11 +555,12 @@ def Training():
         print('testing...')
         tiempo_testing=time()
         # No importa el sufijo _val ya que las estructuras se reinician vacías
+        # tiempo_validation=time()
         model.eval()
         lista_loss_val = []
         lista_dice_val = []
-        # for tensores in test_dataloader:
-        for tensores in val_dataloader:
+        # for tensores in val_dataloader:
+        for tensores in test_dataloader:
             if d['loss'] == 'HD_loss':
                 X, Y, Y_DTM = tensores
                 Y_DTM = Y_DTM.to(device)
@@ -574,6 +580,7 @@ def Training():
                 X, Y = tensores
             X, Y = X.to(device), Y.to(device)
             
+            # with torch.autocast(device_type=device, dtype=torch.float16, enabled=use_amp): # mixed precision
             with autocast(device_type=device, enabled=USE_AMP):
                 if 'MONAI' in d['red']:
                     logits = model(X)
@@ -605,14 +612,15 @@ def Training():
                 
                 else: # Dice, FTL, ASD, BCE, GDL,...
                     loss = loss_function(pred, Y, batch_loss)
-            
+
             
             lista_loss_val.append(loss.item())
             # break###
-        
+            
+        # return None ###
         pacientes_pred_paciente = []
+        # for paciente in pacientes_val[:]:
         for paciente in pacientes_test[:]:
-            # print(paciente)
             Y_paciente_pred = np.zeros((160,2,160,192),dtype=np.float32)
             Y_paciente = np.zeros((160,2,160,192),dtype=np.float32)
             ini = 0
@@ -629,6 +637,7 @@ def Training():
                 else:
                     pred = model(X)
                 
+                # Detectar si hay problemas con pred, ya que se cae aveces
                 pred = pred.detach().cpu().numpy()
                 Y = Y.detach().cpu().numpy()
                 Y_paciente_pred[ini:fin] = pred
@@ -668,7 +677,6 @@ def Training():
                         if llave not in dr_val:
                             dr_val[llave]=[]
                         dr_val[llave].append(float(valor))
-        
             d_epocas['HD_test'].append(np.around(np.mean(dr_val['HD']),8))
             d_epocas['HD95_test'].append(np.around(np.mean(dr_val['HD95']),8))
             d_epocas['HD90_test'].append(np.around(np.mean(dr_val['HD90']),8))
@@ -716,9 +724,9 @@ def Training():
 # =============================================================================
 #   Guardar modelo e historial del entrenamiento
 # =============================================================================
-    # if flag_es:# Si no hubo early-stopping
-    #     nombre_modelo_es = 'k'+str(k)+'_'+str(epoca)+'.pth'
-    #     torch.save(model, os.path.join(path_carpeta_ce,nombre_modelo))
+    if flag_es:# Si no hubo early-stopping sigue como True y se guarda modelo con 200 epocas de entrenamiento
+        nombre_modelo_es = 'k'+str(k)+'_'+str(epoca)+'.pth'
+        torch.save(model, os.path.join(path_carpeta_ce,nombre_modelo))
     # =========================================================================
     t_fin = time()
     # print('d_epocas:',d_epocas)
@@ -874,10 +882,12 @@ batch_size = int(d['batch_size'])
 batch_size_val = int(d['batch_size_val'])
 
 k = int(d['k'])
-if d['batch_loss']=='T':
-    batch_loss = True
-else:
-    batch_loss = False
+# if d['batch_loss']=='T':
+#     batch_loss = True
+# else:
+#     batch_loss = False
+
+batch_loss = True
 
 loss_function = getattr(LossesAndMetrics,d['loss'])()
 print(loss_function)
@@ -990,10 +1000,10 @@ elif 'MD_loss' in d['loss']:
         string_loss = d['loss']+'-'+carpeta_MDF[4:]+'-'
 else: # BCE, Dice, Boundary loss, ABl, CBL
     string_loss = d['loss']
-string_loss +='_bm'+d['batch_loss']
+# string_loss +='_bm'+d['batch_loss']
 
-nombre_carpeta_principal = d['DS']+'_'+d['red']+'_'+string_loss+'_e'+str(epocas)+'_b'+str(
-    batch_size)+'_'+d['opt']+'_da'+d['tasa_da']+'_mp'+d['mixed_precision']+string_es+'_ut'+d['umbral_vol_training']
+nombre_carpeta_principal = d['DS']+'_'+d['red']+'_'+string_loss+'_b'+str(
+    batch_size)+'_mp'+d['mixed_precision']+'_e'+str(epocas)+string_es#+'_ut'+d['umbral_vol_training']
 nombre_carpeta_principal=nombre_carpeta_principal.replace('-_','-')# Para MD_loss
 path_carpeta_principal = os.path.join(os.getcwd(),'Experimentos',nombre_carpeta_principal)
 print('path_carpeta_principal:',path_carpeta_principal)
